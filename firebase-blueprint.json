@@ -1,0 +1,230 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Peça de vestuário ou produto cadastrado no catálogo da loja",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador único da peça"
+        },
+        "storeId": {
+          "type": "string",
+          "description": "Identificador da loja dona do produto"
+        },
+        "code": {
+          "type": "string",
+          "description": "Código de referência ou etiqueta da peça (ex: ETC-101)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome ou título descritivo da peça",
+          "maxLength": 200
+        },
+        "category": {
+          "type": "string",
+          "description": "Categoria da moda (Vestidos, Calças, etc.)"
+        },
+        "size": {
+          "type": "string",
+          "description": "Tamanho da peça (P, M, G, 38, etc.)"
+        },
+        "color": {
+          "type": "string",
+          "description": "Cor ou estampa da peça"
+        },
+        "costPrice": {
+          "type": "number",
+          "description": "Valor pago na aquisição da peça (custo)"
+        },
+        "profitMargin": {
+          "type": "number",
+          "description": "Porcentagem de margem de lucro calculada"
+        },
+        "salePrice": {
+          "type": "number",
+          "description": "Valor final de venda para o cliente"
+        },
+        "stockQuantity": {
+          "type": "integer",
+          "description": "Quantidade de unidades disponíveis em estoque"
+        },
+        "status": {
+          "type": "string",
+          "description": "Status de disponibilidade (DISPONIVEL, BAIXO_ESTOQUE, ESGOTADO)",
+          "enum": ["DISPONIVEL", "BAIXO_ESTOQUE", "ESGOTADO"]
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "URL ou imagem otimizada da peça"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detalhes e descrição do produto"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Data de cadastro ISO string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Data da última modificação ISO string"
+        }
+      },
+      "required": ["code", "name", "costPrice", "salePrice", "stockQuantity"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Registro de venda concluída de uma ou mais peças",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador único da venda"
+        },
+        "storeId": {
+          "type": "string",
+          "description": "Identificador da loja"
+        },
+        "productId": {
+          "type": "string",
+          "description": "ID da peça vendida"
+        },
+        "productCode": {
+          "type": "string",
+          "description": "Código da peça vendida"
+        },
+        "productName": {
+          "type": "string",
+          "description": "Nome da peça vendida"
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Quantidade de unidades vendidas"
+        },
+        "costPrice": {
+          "type": "number",
+          "description": "Custo unitário da peça no momento da venda"
+        },
+        "salePrice": {
+          "type": "number",
+          "description": "Preço unitário de venda praticado"
+        },
+        "profitAmount": {
+          "type": "number",
+          "description": "Lucro líquido total obtido nesta venda"
+        },
+        "totalAmount": {
+          "type": "number",
+          "description": "Valor financeiro total faturado"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "description": "Forma de pagamento utilizada (pix, cartao_credito, etc.)"
+        },
+        "customerName": {
+          "type": "string",
+          "description": "Nome da cliente ou compradora"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Observações adicionais da venda"
+        },
+        "saleDate": {
+          "type": "string",
+          "description": "Data da transação"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Data de criação do registro"
+        }
+      },
+      "required": ["productId", "quantity", "salePrice", "totalAmount"]
+    },
+    "ScheduleItem": {
+      "title": "ScheduleItem",
+      "description": "Compromisso, tarefa ou lembrete na agenda da loja",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador único do compromisso"
+        },
+        "storeId": {
+          "type": "string",
+          "description": "Identificador da loja"
+        },
+        "title": {
+          "type": "string",
+          "description": "Título da tarefa ou compromisso"
+        },
+        "category": {
+          "type": "string",
+          "description": "Categoria (postagem, video, pedidos, live, etc.)"
+        },
+        "date": {
+          "type": "string",
+          "description": "Data do compromisso YYYY-MM-DD"
+        },
+        "time": {
+          "type": "string",
+          "description": "Horário do compromisso HH:mm"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detalhes da tarefa"
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Status de conclusão da tarefa"
+        },
+        "priority": {
+          "type": "string",
+          "description": "Prioridade (baixa, media, alta)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Data de criação"
+        }
+      },
+      "required": ["title", "date", "completed"]
+    },
+    "StoreSettings": {
+      "title": "StoreSettings",
+      "description": "Configurações da loja e dados de contato",
+      "type": "object",
+      "properties": {
+        "storeName": { "type": "string" },
+        "slogan": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "instagram": { "type": "string" },
+        "pixKey": { "type": "string" },
+        "address": { "type": "string" },
+        "currency": { "type": "string" },
+        "lowStockThreshold": { "type": "integer" },
+        "enablePublicCatalog": { "type": "boolean" }
+      },
+      "required": ["storeName"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Coleção de peças cadastradas na loja"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Coleção de histórico de vendas efetuadas"
+    },
+    "/schedule/{scheduleId}": {
+      "schema": "ScheduleItem",
+      "description": "Coleção de tarefas e compromissos da agenda"
+    },
+    "/settings/{storeId}": {
+      "schema": "StoreSettings",
+      "description": "Configurações e preferências da loja"
+    }
+  }
+}

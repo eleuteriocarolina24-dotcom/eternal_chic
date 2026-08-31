@@ -20,6 +20,7 @@ import {
 import { useStore } from '../context/StoreContext';
 import { Product, StockStatus } from '../types';
 import { CameraModal } from '../components/CameraModal';
+import { optimizeImage } from '../lib/firebase';
 
 export const ProductRegisterView: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, showToast, settings } = useStore();
@@ -100,17 +101,23 @@ export const ProductRegisterView: React.FC = () => {
     setSalePrice(calcSale.toFixed(2));
   };
 
-  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setImageUrl(event.target.result as string);
-          showToast('Foto da galeria selecionada!', 'success');
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const optimized = await optimizeImage(file, 800, 800, 0.82);
+        setImageUrl(optimized);
+        showToast('Foto da galeria selecionada e otimizada!', 'success');
+      } catch {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            setImageUrl(event.target.result as string);
+            showToast('Foto da galeria selecionada!', 'success');
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -711,8 +718,13 @@ export const ProductRegisterView: React.FC = () => {
       <CameraModal
         isOpen={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
-        onCapture={(img) => {
-          setImageUrl(img);
+        onCapture={async (img) => {
+          try {
+            const optimized = await optimizeImage(img, 800, 800, 0.82);
+            setImageUrl(optimized);
+          } catch {
+            setImageUrl(img);
+          }
           showToast('Foto capturada da câmera com sucesso!', 'success');
         }}
       />

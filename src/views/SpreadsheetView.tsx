@@ -23,6 +23,7 @@ import {
 import { useStore } from '../context/StoreContext';
 import { Product } from '../types';
 import { CameraModal } from '../components/CameraModal';
+import { optimizeImage } from '../lib/firebase';
 
 // Sample presets for quick fashion photos
 const FASHION_PHOTO_PRESETS = [
@@ -173,21 +174,31 @@ export const SpreadsheetView: React.FC = () => {
     showToast('Foto atualizada na peça!', 'success');
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          handlePhotoSelect(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const optimized = await optimizeImage(file, 800, 800, 0.82);
+        handlePhotoSelect(optimized);
+      } catch {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            handlePhotoSelect(event.target.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  const handleCameraCapture = (photoDataUrl: string) => {
-    handlePhotoSelect(photoDataUrl);
+  const handleCameraCapture = async (photoDataUrl: string) => {
+    try {
+      const optimized = await optimizeImage(photoDataUrl, 800, 800, 0.82);
+      handlePhotoSelect(optimized);
+    } catch {
+      handlePhotoSelect(photoDataUrl);
+    }
     setIsCameraOpen(false);
   };
 
