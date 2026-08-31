@@ -1,0 +1,6 @@
+{
+  "name": "Eternal Chic - Sistema de Gestão",
+  "description": "Sistema de gestão completo para a loja Eternal Chic com controle de estoque, vendas, vitrine de catálogo, calculadora de preço, agenda e sincronização em nuvem.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
