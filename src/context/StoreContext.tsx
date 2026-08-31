@@ -163,7 +163,168 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
-  // Fetch all data from backend & Firestore with resilient fallback
+  // Set up real-time multi-device synchronization with Firestore onSnapshot
+  useEffect(() => {
+    let isMounted = true;
+
+    // 1. Real-time Products listener (Celular <-> Computador <-> Tablet)
+    const unsubscribeProducts = onSnapshot(
+      collection(db, 'products'),
+      (snapshot) => {
+        if (!isMounted) return;
+        if (!snapshot.empty) {
+          const loaded: Product[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            loaded.push({
+              ...data,
+              id: docSnap.id,
+            } as Product);
+          });
+          // Sort newest first
+          loaded.sort((a, b) => {
+            const timeA = new Date(a.createdAt || 0).getTime();
+            const timeB = new Date(b.createdAt || 0).getTime();
+            return timeB - timeA;
+          });
+          setProducts(loaded);
+          setLastSyncTime(new Date());
+          setIsLoading(false);
+        } else {
+          // If Firestore is empty initially, seed from server
+          fetch('/api/data')
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.products && data.products.length > 0) {
+                setProducts(data.products);
+                data.products.forEach(async (prod: Product) => {
+                  try {
+                    await setDoc(doc(db, 'products', prod.id), prod);
+                  } catch {
+                    // ignore
+                  }
+                });
+              }
+              setIsLoading(false);
+            })
+            .catch(() => setIsLoading(false));
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'products');
+        setIsLoading(false);
+      }
+    );
+
+    // 2. Real-time Sales listener
+    const unsubscribeSales = onSnapshot(
+      collection(db, 'sales'),
+      (snapshot) => {
+        if (!isMounted) return;
+        if (!snapshot.empty) {
+          const loaded: Sale[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            loaded.push({
+              ...data,
+              id: docSnap.id,
+            } as Sale);
+          });
+          loaded.sort((a, b) => {
+            const timeA = new Date(a.saleDate || a.createdAt || 0).getTime();
+            const timeB = new Date(b.saleDate || b.createdAt || 0).getTime();
+            return timeB - timeA;
+          });
+          setSales(loaded);
+          setLastSyncTime(new Date());
+        } else {
+          fetch('/api/data')
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.sales && data.sales.length > 0) {
+                setSales(data.sales);
+                data.sales.forEach(async (sale: Sale) => {
+                  try {
+                    await setDoc(doc(db, 'sales', sale.id), sale);
+                  } catch {
+                    // ignore
+                  }
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'sales');
+      }
+    );
+
+    // 3. Real-time Schedule listener
+    const unsubscribeSchedule = onSnapshot(
+      collection(db, 'schedule'),
+      (snapshot) => {
+        if (!isMounted) return;
+        if (!snapshot.empty) {
+          const loaded: ScheduleItem[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            loaded.push({
+              ...data,
+              id: docSnap.id,
+            } as ScheduleItem);
+          });
+          loaded.sort((a, b) => (a.date + ' ' + (a.time || '')).localeCompare(b.date + ' ' + (b.time || '')));
+          setSchedule(loaded);
+          setLastSyncTime(new Date());
+        } else {
+          fetch('/api/data')
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.schedule && data.schedule.length > 0) {
+                setSchedule(data.schedule);
+                data.schedule.forEach(async (item: ScheduleItem) => {
+                  try {
+                    await setDoc(doc(db, 'schedule', item.id), item);
+                  } catch {
+                    // ignore
+                  }
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'schedule');
+      }
+    );
+
+    // 4. Real-time Settings listener
+    const unsubscribeSettings = onSnapshot(
+      doc(db, 'settings', 'store_config'),
+      (docSnap) => {
+        if (!isMounted) return;
+        if (docSnap.exists()) {
+          setSettings((prev) => ({ ...prev, ...(docSnap.data() as StoreSettings) }));
+          setLastSyncTime(new Date());
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'settings/store_config');
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      unsubscribeProducts();
+      unsubscribeSales();
+      unsubscribeSchedule();
+      unsubscribeSettings();
+    };
+  }, []);
+
+  // Manual or background sync fallback
   const syncData = useCallback(async (silent = false) => {
     if (!silent) setIsSyncing(true);
     try {
@@ -174,34 +335,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const res = await fetch('/api/data', { headers });
       if (res.ok) {
         const data = await res.json();
-        setProducts(data.products || []);
-        setSales(data.sales || []);
-        setSchedule(data.schedule || []);
         if (data.settings) {
-          setSettings(data.settings);
+          setSettings((prev) => ({ ...prev, ...data.settings }));
         }
         setLastSyncTime(new Date());
       }
     } catch (err) {
-      console.warn('Network sync notice (using local/cloud state):', err);
+      console.warn('Network sync notice:', err);
     } finally {
       if (!silent) setIsSyncing(false);
       setIsLoading(false);
     }
   }, [token]);
-
-  // Initial load
-  useEffect(() => {
-    syncData();
-  }, [syncData]);
-
-  // Periodic automatic sync every 15 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      syncData(true);
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [syncData]);
 
   // Compute metrics dynamically
   const metrics: DashboardMetrics = useMemo(() => {
@@ -844,9 +989,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setSettings(updated);
 
       try {
+        await setDoc(doc(db, 'settings', 'store_config'), updated, { merge: true });
         await setDoc(doc(db, 'settings', token || 'user-demo-1'), updated, { merge: true });
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `settings/${token || 'user-demo-1'}`);
+        handleFirestoreError(err, OperationType.WRITE, 'settings/store_config');
       }
 
       try {
