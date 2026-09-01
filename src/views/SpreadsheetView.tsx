@@ -23,7 +23,7 @@ import {
 import { useStore } from '../context/StoreContext';
 import { Product } from '../types';
 import { CameraModal } from '../components/CameraModal';
-import { optimizeImage } from '../lib/firebase';
+import { optimizeImage, DEFAULT_PIECE_IMAGE } from '../lib/firebase';
 
 // Sample presets for quick fashion photos
 const FASHION_PHOTO_PRESETS = [
@@ -681,8 +681,11 @@ export const SpreadsheetView: React.FC = () => {
                           title="Clique para alterar a foto desta peça"
                         >
                           <img
-                            src={product.imageUrl}
+                            src={product.imageUrl || DEFAULT_PIECE_IMAGE}
                             alt={product.name}
+                            onError={(e) => {
+                              e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                            }}
                             className="w-full h-full object-cover group-hover/btn:scale-105 transition-transform"
                           />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/btn:opacity-100 flex items-center justify-center text-white transition-opacity">

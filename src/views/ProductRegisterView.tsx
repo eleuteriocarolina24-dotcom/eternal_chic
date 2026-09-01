@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Camera, 
@@ -15,12 +15,15 @@ import {
   DollarSign,
   Package,
   Layers,
-  Filter
+  Filter,
+  Upload,
+  Link as LinkIcon,
+  RefreshCw
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product, StockStatus } from '../types';
 import { CameraModal } from '../components/CameraModal';
-import { optimizeImage } from '../lib/firebase';
+import { optimizeImage, DEFAULT_PIECE_IMAGE } from '../lib/firebase';
 
 export const ProductRegisterView: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, showToast, settings } = useStore();
@@ -36,10 +39,15 @@ export const ProductRegisterView: React.FC = () => {
   const [profitMargin, setProfitMargin] = useState<string>('100');
   const [salePrice, setSalePrice] = useState<string>('100.00');
   const [stockQuantity, setStockQuantity] = useState<string>('5');
-  const [imageUrl, setImageUrl] = useState<string>('https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=800&q=80');
+  const [imageUrl, setImageUrl] = useState<string>(DEFAULT_PIECE_IMAGE);
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [isOptimizingPhoto, setIsOptimizingPhoto] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [customUrlInput, setCustomUrlInput] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter & Search state for the list below
   const [searchQuery, setSearchQuery] = useState('');
@@ -101,24 +109,68 @@ export const ProductRegisterView: React.FC = () => {
     setSalePrice(calcSale.toFixed(2));
   };
 
+  // Central photo processing logic
+  const processAndSetPhoto = async (source: File | Blob | string, successMsg = 'Foto da peça carregada!') => {
+    setIsOptimizingPhoto(true);
+    try {
+      const optimized = await optimizeImage(source, 800, 800, 0.80);
+      setImageUrl(optimized);
+      showToast(successMsg, 'success');
+    } catch (err) {
+      console.warn('Erro ao carregar foto:', err);
+      if (typeof source === 'string') {
+        setImageUrl(source);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            setImageUrl(e.target.result as string);
+          }
+        };
+        reader.readAsDataURL(source);
+      }
+      showToast('Foto selecionada!', 'info');
+    } finally {
+      setIsOptimizingPhoto(false);
+    }
+  };
+
   const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      try {
-        const optimized = await optimizeImage(file, 800, 800, 0.82);
-        setImageUrl(optimized);
-        showToast('Foto da galeria selecionada e otimizada!', 'success');
-      } catch {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (event.target?.result) {
-            setImageUrl(event.target.result as string);
-            showToast('Foto da galeria selecionada!', 'success');
-          }
-        };
-        reader.readAsDataURL(file);
-      }
+      await processAndSetPhoto(file, 'Foto da galeria carregada com sucesso!');
+      e.target.value = '';
     }
+  };
+
+  // Drag and Drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      await processAndSetPhoto(file, 'Foto arrastada e carregada com sucesso!');
+    }
+  };
+
+  const handleApplyUrl = () => {
+    if (!customUrlInput.trim()) {
+      showToast('Insira um link válido da imagem', 'warning');
+      return;
+    }
+    setImageUrl(customUrlInput.trim());
+    setCustomUrlInput('');
+    setShowUrlInput(false);
+    showToast('Link da foto aplicado!', 'success');
   };
 
   const handleStartEdit = (product: Product) => {
@@ -132,7 +184,7 @@ export const ProductRegisterView: React.FC = () => {
     setProfitMargin(product.profitMargin.toString());
     setSalePrice(product.salePrice.toString());
     setStockQuantity(product.stockQuantity.toString());
-    setImageUrl(product.imageUrl);
+    setImageUrl(product.imageUrl || DEFAULT_PIECE_IMAGE);
     setDescription(product.description || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -150,6 +202,8 @@ export const ProductRegisterView: React.FC = () => {
     setStockQuantity('5');
     setImageUrl(sampleFashionPhotos[0].url);
     setDescription('');
+    setShowUrlInput(false);
+    setCustomUrlInput('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -237,16 +291,45 @@ export const ProductRegisterView: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* PHOTO COLUMN (4 Cols) */}
             <div className="lg:col-span-4 space-y-4">
-              <label className="block text-[10px] font-bold uppercase tracking-widest text-[#3D2B1F]">
-                1. Fotografia da Peça *
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#3D2B1F]">
+                  1. Fotografia da Peça *
+                </label>
+                {imageUrl && imageUrl !== DEFAULT_PIECE_IMAGE && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl(DEFAULT_PIECE_IMAGE)}
+                    className="text-[9px] text-[#8C7A6B] hover:text-red-700 uppercase tracking-wider underline transition-colors"
+                  >
+                    Restaurar Padrão
+                  </button>
+                )}
+              </div>
 
-              {/* Image Preview Box */}
-              <div className="relative aspect-square rounded-sm bg-[#F9F7F5] border border-dashed border-[#D9C5B2] overflow-hidden group shadow-2xs flex items-center justify-center">
+              {/* Image Preview Box with Drag & Drop */}
+              <div 
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`relative aspect-square rounded-sm bg-[#F9F7F5] border-2 border-dashed overflow-hidden group shadow-2xs flex items-center justify-center transition-all ${
+                  isDragging ? 'border-[#3D2B1F] bg-[#F0EBE6]' : 'border-[#D9C5B2]'
+                }`}
+              >
+                {isOptimizingPhoto ? (
+                  <div className="absolute inset-0 z-20 bg-white/90 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center">
+                    <RefreshCw className="w-8 h-8 animate-spin text-[#3D2B1F] mb-2" />
+                    <span className="text-xs font-serif font-medium text-[#3D2B1F]">Otimizando fotografia...</span>
+                    <span className="text-[10px] text-[#8C7A6B] mt-0.5">Redimensionando para alta nitidez e sincronização rápida</span>
+                  </div>
+                ) : null}
+
                 {imageUrl ? (
                   <img
                     src={imageUrl}
                     alt="Preview da peça"
+                    onError={(e) => {
+                      e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                    }}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 ) : (
@@ -262,6 +345,11 @@ export const ProductRegisterView: React.FC = () => {
                     {code}
                   </div>
                 )}
+
+                {/* Drag instruction on hover */}
+                <div className="absolute inset-x-0 bottom-0 py-1.5 bg-[#3D2B1F]/80 backdrop-blur-xs text-white text-[9px] font-medium text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  Toque nos botões abaixo ou arraste uma foto aqui
+                </div>
               </div>
 
               {/* Photo Action Buttons */}
@@ -273,7 +361,7 @@ export const ProductRegisterView: React.FC = () => {
                   onClick={() => setIsCameraOpen(true)}
                   className="py-2.5 px-3 rounded-sm bg-[#3D2B1F] hover:bg-[#2C1F16] text-white text-[10px] uppercase tracking-widest font-medium shadow-2xs transition-colors flex items-center justify-center gap-2"
                 >
-                  <Camera className="w-3.5 h-3.5" />
+                  <Camera className="w-3.5 h-3.5 text-[#D9C5B2]" />
                   <span>Tirar Foto</span>
                 </button>
 
@@ -282,9 +370,10 @@ export const ProductRegisterView: React.FC = () => {
                   id="upload-gallery-btn"
                   className="py-2.5 px-3 rounded-sm border border-[#D9C5B2] bg-[#F9F7F5] hover:bg-[#F0EBE6] text-[#3D2B1F] text-[10px] uppercase tracking-widest font-medium shadow-2xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <ImageIcon className="w-3.5 h-3.5 text-[#8C7A6B]" />
+                  <Upload className="w-3.5 h-3.5 text-[#8C7A6B]" />
                   <span>Galeria</span>
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept="image/*"
                     className="hidden"
@@ -293,10 +382,41 @@ export const ProductRegisterView: React.FC = () => {
                 </label>
               </div>
 
+              {/* URL paste toggle */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowUrlInput(!showUrlInput)}
+                  className="text-[10px] uppercase tracking-widest text-[#8C7A6B] hover:text-[#3D2B1F] font-medium flex items-center gap-1.5 transition-colors"
+                >
+                  <LinkIcon className="w-3 h-3" />
+                  <span>{showUrlInput ? 'Ocultar campo de link' : 'Colar link da foto da web (URL)'}</span>
+                </button>
+
+                {showUrlInput && (
+                  <div className="mt-2 flex gap-2 animate-in fade-in duration-200">
+                    <input
+                      type="url"
+                      value={customUrlInput}
+                      onChange={(e) => setCustomUrlInput(e.target.value)}
+                      placeholder="https://exemplo.com/foto-peca.jpg"
+                      className="flex-1 px-3 py-1.5 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs text-[#3D2B1F] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyUrl}
+                      className="px-3 py-1.5 bg-[#3D2B1F] hover:bg-[#2C1F16] text-white text-[10px] uppercase tracking-widest font-medium rounded-sm transition-colors"
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Quick sample photo selector presets */}
               <div>
                 <span className="text-[10px] uppercase tracking-widest text-[#8C7A6B] block mb-2 font-medium">
-                  Ou selecione foto de referência:
+                  Ou escolha uma referência do acervo:
                 </span>
                 <div className="flex gap-2 overflow-x-auto pb-2">
                   {sampleFashionPhotos.map((preset, idx) => (
@@ -306,12 +426,17 @@ export const ProductRegisterView: React.FC = () => {
                       onClick={() => setImageUrl(preset.url)}
                       className={`w-11 h-11 rounded-sm overflow-hidden shrink-0 border transition-all ${
                         imageUrl === preset.url
-                          ? 'border-[#3D2B1F] ring-1 ring-[#3D2B1F]'
+                          ? 'border-[#3D2B1F] ring-2 ring-[#3D2B1F]'
                           : 'border-[#D9C5B2] opacity-70 hover:opacity-100'
                       }`}
                       title={preset.label}
                     >
-                      <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
+                      <img 
+                        src={preset.url} 
+                        alt={preset.label} 
+                        onError={(e) => { e.currentTarget.src = DEFAULT_PIECE_IMAGE; }}
+                        className="w-full h-full object-cover" 
+                      />
                     </button>
                   ))}
                 </div>
@@ -557,13 +682,15 @@ export const ProductRegisterView: React.FC = () => {
                 <button
                   id="submit-product-btn"
                   type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 py-3 px-6 rounded-sm bg-[#3D2B1F] hover:bg-[#2C1F16] text-white text-xs uppercase tracking-widest font-medium shadow-xs transition-all flex items-center justify-center gap-2"
+                  disabled={isSubmitting || isOptimizingPhoto}
+                  className="flex-1 py-3 px-6 rounded-sm bg-[#3D2B1F] hover:bg-[#2C1F16] text-white text-xs uppercase tracking-widest font-medium shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <Check className="w-4 h-4" />
                   <span>
                     {isSubmitting 
                       ? 'Salvando na Nuvem...' 
+                      : isOptimizingPhoto
+                      ? 'Processando Foto...'
                       : editingId 
                       ? 'Atualizar Peça' 
                       : 'Salvar e Cadastrar Peça'}

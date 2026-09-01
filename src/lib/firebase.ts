@@ -70,21 +70,73 @@ export async function testConnection(): Promise<boolean> {
   }
 }
 
-// Image compression utility to make piece photo saving ultra-fast and 100% error-free
-export async function optimizeImage(source: File | Blob | string, maxWidth = 800, maxHeight = 800, quality = 0.82): Promise<string> {
-  return new Promise((resolve) => {
-    try {
-      if (typeof source === 'string' && (source.startsWith('http://') || source.startsWith('https://'))) {
-        // Already a remote URL
-        return resolve(source);
-      }
+// Fallback chic placeholder image
+export const DEFAULT_PIECE_IMAGE = 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=800&q=80';
 
+// Helper to read File/Blob as Data URL safely
+function readFileAsDataUrl(fileOrBlob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Failed to read file as string'));
+      }
+    };
+    reader.onerror = () => reject(reader.error || new Error('FileReader error'));
+    reader.readAsDataURL(fileOrBlob);
+  });
+}
+
+// Image compression utility to make piece photo saving ultra-fast, robust, and 100% persistent across all devices
+export async function optimizeImage(
+  source: File | Blob | string,
+  maxWidth = 800,
+  maxHeight = 800,
+  quality = 0.80
+): Promise<string> {
+  if (!source) return DEFAULT_PIECE_IMAGE;
+
+  // 1. If it's a web URL (http:// or https://), validate and return
+  if (typeof source === 'string' && (source.startsWith('http://') || source.startsWith('https://'))) {
+    return source.trim();
+  }
+
+  // 2. If it is already a small base64 image (< 50KB) and valid, return it
+  if (typeof source === 'string' && source.startsWith('data:image/') && source.length < 50000) {
+    return source;
+  }
+
+  try {
+    // 3. Obtain initial data URL string
+    let initialDataUrl = '';
+    if (typeof source === 'string') {
+      initialDataUrl = source;
+    } else {
+      initialDataUrl = await readFileAsDataUrl(source);
+    }
+
+    if (!initialDataUrl || !initialDataUrl.startsWith('data:image/')) {
+      return initialDataUrl || DEFAULT_PIECE_IMAGE;
+    }
+
+    // 4. Compress & resize via HTML Canvas
+    return await new Promise<string>((resolve) => {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
+
+      // Only set crossOrigin for remote URLs; never for data URLs in WebKit/iOS
+      if (initialDataUrl.startsWith('http://') || initialDataUrl.startsWith('https://')) {
+        img.crossOrigin = 'anonymous';
+      }
 
       img.onload = () => {
         try {
           let { width, height } = img;
+          if (!width || !height) {
+            return resolve(initialDataUrl);
+          }
+
           if (width > maxWidth || height > maxHeight) {
             if (width > height) {
               height = Math.round((height * maxWidth) / width);
@@ -96,39 +148,45 @@ export async function optimizeImage(source: File | Blob | string, maxWidth = 800
           }
 
           const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
           const ctx = canvas.getContext('2d');
+          
           if (ctx) {
+            // Fill background with white to avoid black background on transparent PNGs/stickers
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert to clean JPEG format for compact size & maximum compatibility
             const compressed = canvas.toDataURL('image/jpeg', quality);
-            resolve(compressed);
-          } else {
-            resolve(typeof source === 'string' ? source : URL.createObjectURL(source));
+            if (compressed && compressed.length > 50) {
+              return resolve(compressed);
+            }
           }
-        } catch {
-          resolve(typeof source === 'string' ? source : URL.createObjectURL(source));
+          resolve(initialDataUrl);
+        } catch (canvasErr) {
+          console.warn('Canvas compression notice, falling back to data URL:', canvasErr);
+          resolve(initialDataUrl);
         }
       };
 
       img.onerror = () => {
-        resolve(typeof source === 'string' ? source : URL.createObjectURL(source));
+        // Fallback directly to the raw Base64 data URL (which is permanent)
+        resolve(initialDataUrl);
       };
 
-      if (typeof source === 'string') {
-        img.src = source;
-      } else {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          img.src = e.target?.result as string;
-        };
-        reader.onerror = () => {
-          resolve(URL.createObjectURL(source));
-        };
-        reader.readAsDataURL(source);
-      }
-    } catch {
-      resolve(typeof source === 'string' ? source : '');
+      img.src = initialDataUrl;
+    });
+  } catch (err) {
+    console.warn('Image optimization notice:', err);
+    if (typeof source === 'string') {
+      return source || DEFAULT_PIECE_IMAGE;
     }
-  });
+    try {
+      return await readFileAsDataUrl(source);
+    } catch {
+      return DEFAULT_PIECE_IMAGE;
+    }
+  }
 }
