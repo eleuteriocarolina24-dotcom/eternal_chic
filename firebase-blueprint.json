@@ -63,6 +63,10 @@
           "type": "string",
           "description": "Detalhes e descrição do produto"
         },
+        "entryDate": {
+          "type": "string",
+          "description": "Data de entrada, aquisição ou registro da peça (YYYY-MM-DD)"
+        },
         "createdAt": {
           "type": "string",
           "description": "Data de cadastro ISO string"

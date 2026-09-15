@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { ButterflyLogo } from '../components/ButterflyLogo';
+import { DEFAULT_PIECE_IMAGE } from '../lib/firebase';
 
 export const DashboardView: React.FC = () => {
   const { 
@@ -383,8 +384,11 @@ export const DashboardView: React.FC = () => {
                   <div className="flex items-center gap-2.5 min-w-0">
                     {sale.productImageUrl ? (
                       <img
-                        src={sale.productImageUrl}
+                        src={sale.productImageUrl || DEFAULT_PIECE_IMAGE}
                         alt={sale.productName}
+                        onError={(e) => {
+                          e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                        }}
                         className="w-10 h-10 rounded-sm object-cover border border-[#D9C5B2] shrink-0 bg-white"
                       />
                     ) : (

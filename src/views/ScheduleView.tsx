@@ -17,12 +17,13 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { ScheduleItem } from '../types';
+import { formatDateBR, getTodayISODate } from '../utils/dateUtils';
 
 export const ScheduleView: React.FC = () => {
   const { schedule, addScheduleItem, toggleScheduleItem, deleteScheduleItem, showToast } = useStore();
 
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => getTodayISODate());
   const [time, setTime] = useState('14:00');
   const [type, setType] = useState<ScheduleItem['type']>('entrega');
   const [description, setDescription] = useState('');
@@ -273,7 +274,7 @@ export const ScheduleView: React.FC = () => {
                               {typeObj?.label}
                             </span>
                             <span className="text-[10px] font-mono text-[#8C7A6B]">
-                              📅 {new Date(item.date + 'T12:00:00').toLocaleDateString('pt-BR')} {item.time && `às ${item.time}`}
+                              📅 {formatDateBR(item.date)} {item.time && `às ${item.time}`}
                             </span>
                           </div>
 

@@ -33,6 +33,7 @@ const initialSampleProducts = [
     status: 'DISPONIVEL',
     imageUrl: 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=800&q=80',
     description: 'Vestido midi em toque de seda, decote delicado e caimento fluido com estampa floral exclusiva.',
+    entryDate: new Date(Date.now() - 86400000 * 5).toISOString().split('T')[0],
     createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
     updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
   },
@@ -50,6 +51,7 @@ const initialSampleProducts = [
     status: 'DISPONIVEL',
     imageUrl: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=800&q=80',
     description: 'Blazer estruturado em alfaiataria premium com forro acetinado e botões delicados forrados.',
+    entryDate: new Date(Date.now() - 86400000 * 4).toISOString().split('T')[0],
     createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
     updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
   },
@@ -67,6 +69,7 @@ const initialSampleProducts = [
     status: 'BAIXO_ESTOQUE',
     imageUrl: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=800&q=80',
     description: 'Calça wide leg cintura alta em linho misto, acompanha cinto fino encapado.',
+    entryDate: new Date(Date.now() - 86400000 * 3).toISOString().split('T')[0],
     createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -84,6 +87,7 @@ const initialSampleProducts = [
     status: 'DISPONIVEL',
     imageUrl: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80',
     description: 'Conjunto confortável de blusa gola alta e saia midi em tricot modal canelado.',
+    entryDate: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
     createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -101,6 +105,7 @@ const initialSampleProducts = [
     status: 'ESGOTADO',
     imageUrl: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=800&q=80',
     description: 'Camisa de seda pura com amarração de laço no pescoço e punhos alongados.',
+    entryDate: new Date(Date.now() - 86400000 * 6).toISOString().split('T')[0],
     createdAt: new Date(Date.now() - 86400000 * 6).toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -455,6 +460,36 @@ app.get('/api/data', (req, res) => {
   });
 });
 
+// MULTI-DEVICE FULL SYNC (Celular <-> Tablet <-> Computador)
+app.post('/api/sync/all', (req, res) => {
+  const userId = authenticate(req);
+  const userStore = getUserStore(userId);
+  const { products, sales, schedule, settings } = req.body;
+
+  if (Array.isArray(products) && products.length > 0) {
+    userStore.products = products;
+  }
+  if (Array.isArray(sales)) {
+    userStore.sales = sales;
+  }
+  if (Array.isArray(schedule)) {
+    userStore.schedule = schedule;
+  }
+  if (settings && typeof settings === 'object') {
+    userStore.settings = { ...userStore.settings, ...settings };
+  }
+
+  saveDb();
+  res.json({
+    message: 'Dados e datas 100% sincronizados em nuvem!',
+    products: userStore.products,
+    sales: userStore.sales,
+    schedule: userStore.schedule,
+    settings: userStore.settings,
+    lastSync: new Date().toISOString(),
+  });
+});
+
 // PUBLIC CATALOG (For customers without auth)
 app.get('/api/public-catalog', (req, res) => {
   const storeId = req.query.storeId as string || 'user-demo-1';
@@ -508,7 +543,7 @@ app.post('/api/products', (req, res) => {
   }
 
   const newProduct = {
-    id: 'prod-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+    id: body.id || ('prod-' + Date.now() + '-' + Math.floor(Math.random() * 1000)),
     code,
     name: body.name.trim(),
     category: body.category || 'Geral',
@@ -521,7 +556,8 @@ app.post('/api/products', (req, res) => {
     status: computeProductStatus(stockQty, userStore.settings.lowStockThreshold || 2),
     imageUrl: body.imageUrl || 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80',
     description: body.description || '',
-    createdAt: new Date().toISOString(),
+    entryDate: body.entryDate || new Date().toISOString().split('T')[0],
+    createdAt: body.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 
@@ -558,6 +594,7 @@ app.put('/api/products/:id', (req, res) => {
     salePrice: sale,
     profitMargin: body.profitMargin !== undefined ? parseFloat(body.profitMargin) : margin,
     stockQuantity: stockQty,
+    entryDate: body.entryDate !== undefined ? body.entryDate : (existing.entryDate || existing.createdAt?.split('T')[0]),
     status: computeProductStatus(stockQty, userStore.settings.lowStockThreshold || 2),
     updatedAt: new Date().toISOString(),
   };
@@ -688,15 +725,16 @@ app.post('/api/schedule', (req, res) => {
   }
 
   const newItem = {
-    id: 'sched-' + Date.now(),
+    id: body.id || ('sched-' + Date.now()),
     title: body.title.trim(),
-    category: body.category || 'outro',
+    category: body.category || body.type || 'outro',
+    type: body.type || body.category || 'lembrete',
     date: body.date,
     time: body.time || '',
     description: body.description || '',
-    completed: false,
+    completed: Boolean(body.completed),
     priority: body.priority || 'media',
-    createdAt: new Date().toISOString(),
+    createdAt: body.createdAt || new Date().toISOString(),
   };
 
   userStore.schedule.unshift(newItem);

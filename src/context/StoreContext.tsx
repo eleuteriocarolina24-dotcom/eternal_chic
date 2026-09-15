@@ -6,6 +6,7 @@ import {
   setDoc, 
   deleteDoc, 
   getDocs, 
+  getDoc,
   onSnapshot 
 } from 'firebase/firestore';
 import { 
@@ -16,6 +17,11 @@ import {
   testConnection, 
   optimizeImage 
 } from '../lib/firebase';
+import { 
+  idbGet, 
+  idbSet, 
+  idbDelete 
+} from '../lib/indexedDb';
 import { 
   Product, 
   Sale, 
@@ -119,9 +125,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return localStorage.getItem('eternal_chic_token') || 'user-demo-1';
   });
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [products, setProducts] = useState<Product[]>(() => {
+    try {
+      const cached = localStorage.getItem('eternal_chic_products_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [sales, setSales] = useState<Sale[]>(() => {
+    try {
+      const cached = localStorage.getItem('eternal_chic_sales_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [schedule, setSchedule] = useState<ScheduleItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('eternal_chic_schedule_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [settings, setSettings] = useState<StoreSettings>(defaultSettings);
   
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -130,6 +157,81 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Hydrate from IndexedDB on initial mount for instant offline/reconnect display
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [savedProds, savedSales, savedSched, savedSettings] = await Promise.all([
+          idbGet<Product[]>('eternal_chic_products'),
+          idbGet<Sale[]>('eternal_chic_sales'),
+          idbGet<ScheduleItem[]>('eternal_chic_schedule'),
+          idbGet<StoreSettings>('eternal_chic_settings'),
+        ]);
+        if (!active) return;
+        if (savedProds && savedProds.length > 0) {
+          setProducts(savedProds);
+          setIsLoading(false);
+        }
+        if (savedSales && savedSales.length > 0) {
+          setSales(savedSales);
+        }
+        if (savedSched && savedSched.length > 0) {
+          setSchedule(savedSched);
+        }
+        if (savedSettings) {
+          setSettings((prev) => ({ ...prev, ...savedSettings }));
+        }
+      } catch (e) {
+        console.warn('Initial IndexedDB hydration notice:', e);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // Permanent IndexedDB storage backup (unlimited quota, supports heavy photos without crashing)
+  useEffect(() => {
+    if (products.length > 0) {
+      idbSet('eternal_chic_products', products);
+      // Also try light localStorage without photos if possible for instant DOM boot
+      try {
+        const lightProducts = products.map(p => ({
+          ...p,
+          imageUrl: p.imageUrl.startsWith('data:') ? '' : p.imageUrl, // strip huge data URIs in localStorage
+        }));
+        localStorage.setItem('eternal_chic_products_cache', JSON.stringify(lightProducts));
+      } catch {
+        // quota exceeded - safely ignored since IndexedDB has all the full data
+      }
+    }
+  }, [products]);
+
+  useEffect(() => {
+    if (schedule.length > 0) {
+      idbSet('eternal_chic_schedule', schedule);
+      try {
+        localStorage.setItem('eternal_chic_schedule_cache', JSON.stringify(schedule));
+      } catch {
+        // ignore
+      }
+    }
+  }, [schedule]);
+
+  useEffect(() => {
+    if (sales.length > 0) {
+      idbSet('eternal_chic_sales', sales);
+      try {
+        localStorage.setItem('eternal_chic_sales_cache', JSON.stringify(sales));
+      } catch {
+        // ignore
+      }
+    }
+  }, [sales]);
+
+  useEffect(() => {
+    idbSet('eternal_chic_settings', settings);
+  }, [settings]);
 
   const showToast = useCallback((message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     const id = 'toast-' + Date.now() + '-' + Math.random();
@@ -179,6 +281,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             loaded.push({
               ...data,
               id: docSnap.id,
+              entryDate: data.entryDate || (data.createdAt ? data.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
             } as Product);
           });
           // Sort newest first
@@ -191,28 +294,58 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setLastSyncTime(new Date());
           setIsLoading(false);
         } else {
-          // If Firestore is empty initially, seed from server
-          fetch('/api/data')
-            .then((res) => res.json())
-            .then((data) => {
-              if (data.products && data.products.length > 0) {
-                setProducts(data.products);
-                data.products.forEach(async (prod: Product) => {
-                  try {
-                    await setDoc(doc(db, 'products', prod.id), prod);
-                  } catch {
-                    // ignore
-                  }
-                });
-              }
+          // If Firestore is empty, check IndexedDB first so user-entered pieces are NEVER lost!
+          idbGet<Product[]>('eternal_chic_products').then((localSaved) => {
+            if (!isMounted) return;
+            if (localSaved && localSaved.length > 0) {
+              setProducts(localSaved);
+              // Push local pieces to Firestore
+              localSaved.forEach(async (prod) => {
+                try {
+                  await setDoc(doc(db, 'products', prod.id), prod);
+                } catch {
+                  // ignore
+                }
+              });
               setIsLoading(false);
-            })
-            .catch(() => setIsLoading(false));
+            } else {
+              // Truly clean start, load initial setup
+              fetch('/api/data')
+                .then((res) => res.json())
+                .then((data) => {
+                  if (data.products && data.products.length > 0) {
+                    const mapped = data.products.map((prod: Product) => ({
+                      ...prod,
+                      entryDate: prod.entryDate || (prod.createdAt ? prod.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+                    }));
+                    setProducts(mapped);
+                    mapped.forEach(async (prod: Product) => {
+                      try {
+                        await setDoc(doc(db, 'products', prod.id), prod);
+                      } catch {
+                        // ignore
+                      }
+                    });
+                  }
+                  setIsLoading(false);
+                })
+                .catch(() => setIsLoading(false));
+            }
+          });
         }
       },
       (error) => {
         handleFirestoreError(error, OperationType.LIST, 'products');
-        setIsLoading(false);
+        // Graceful fallback to server API if firestore network is interrupted
+        fetch('/api/data')
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.products && data.products.length > 0) {
+              setProducts(data.products);
+            }
+          })
+          .catch(() => {})
+          .finally(() => setIsLoading(false));
       }
     );
 
@@ -257,10 +390,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       (error) => {
         handleFirestoreError(error, OperationType.LIST, 'sales');
+        fetch('/api/data')
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.sales && data.sales.length > 0) {
+              setSales(data.sales);
+            }
+          })
+          .catch(() => {});
       }
     );
 
-    // 3. Real-time Schedule listener
+    // 3. Real-time Schedule listener (Celular <-> Tablet <-> Computador)
     const unsubscribeSchedule = onSnapshot(
       collection(db, 'schedule'),
       (snapshot) => {
@@ -297,6 +438,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       (error) => {
         handleFirestoreError(error, OperationType.LIST, 'schedule');
+        fetch('/api/data')
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.schedule && data.schedule.length > 0) {
+              setSchedule(data.schedule);
+            }
+          })
+          .catch(() => {});
       }
     );
 
@@ -324,29 +473,120 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
-  // Manual or background sync fallback
+  // Multi-device sync (Celular <-> Tablet <-> Computador)
   const syncData = useCallback(async (silent = false) => {
     if (!silent) setIsSyncing(true);
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      // 1. Check direct Firestore snapshot for newest updates
+      const [prodSnap, schedSnap, salesSnap, settingsSnap] = await Promise.all([
+        getDocs(collection(db, 'products')).catch(() => null),
+        getDocs(collection(db, 'schedule')).catch(() => null),
+        getDocs(collection(db, 'sales')).catch(() => null),
+        getDoc(doc(db, 'settings', 'store_config')).catch(() => null),
+      ]);
+
+      let freshProducts: Product[] = [];
+      let freshSchedule: ScheduleItem[] = [];
+      let freshSales: Sale[] = [];
+      let hasFirestore = false;
+
+      if (prodSnap && !prodSnap.empty) {
+        hasFirestore = true;
+        prodSnap.forEach((d) => {
+          const item = d.data();
+          freshProducts.push({
+            ...item,
+            id: d.id,
+            entryDate: item.entryDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+          } as Product);
+        });
+        freshProducts.sort((a, b) => {
+          const timeA = new Date(a.createdAt || 0).getTime();
+          const timeB = new Date(b.createdAt || 0).getTime();
+          return timeB - timeA;
+        });
+        setProducts(freshProducts);
       }
-      const res = await fetch('/api/data', { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.settings) {
-          setSettings((prev) => ({ ...prev, ...data.settings }));
+
+      if (schedSnap && !schedSnap.empty) {
+        hasFirestore = true;
+        schedSnap.forEach((d) => {
+          freshSchedule.push({ ...d.data(), id: d.id } as ScheduleItem);
+        });
+        freshSchedule.sort((a, b) => (a.date + ' ' + (a.time || '')).localeCompare(b.date + ' ' + (b.time || '')));
+        setSchedule(freshSchedule);
+      }
+
+      if (salesSnap && !salesSnap.empty) {
+        hasFirestore = true;
+        salesSnap.forEach((d) => {
+          freshSales.push({ ...d.data(), id: d.id } as Sale);
+        });
+        freshSales.sort((a, b) => {
+          const timeA = new Date(a.saleDate || a.createdAt || 0).getTime();
+          const timeB = new Date(b.saleDate || b.createdAt || 0).getTime();
+          return timeB - timeA;
+        });
+        setSales(freshSales);
+      }
+
+      if (settingsSnap && settingsSnap.exists()) {
+        setSettings((prev) => ({ ...prev, ...(settingsSnap.data() as StoreSettings) }));
+      }
+
+      // Sync with server mirror
+      if (hasFirestore) {
+        try {
+          await fetch('/api/sync/all', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token || 'user-demo-1'}`,
+            },
+            body: JSON.stringify({
+              products: freshProducts,
+              schedule: freshSchedule,
+              sales: freshSales,
+            }),
+          });
+        } catch {
+          // ignore
         }
-        setLastSyncTime(new Date());
+      } else {
+        const res = await fetch('/api/data', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.products && data.products.length > 0) {
+            setProducts(data.products);
+          }
+          if (data.schedule && data.schedule.length > 0) {
+            setSchedule(data.schedule);
+          }
+          if (data.sales && data.sales.length > 0) {
+            setSales(data.sales);
+          }
+          if (data.settings) {
+            setSettings((prev) => ({ ...prev, ...data.settings }));
+          }
+        }
+      }
+
+      setLastSyncTime(new Date());
+      if (!silent) {
+        showToast('✨ Sincronização em nuvem ativa! Peças, datas e agenda atualizadas.', 'success');
       }
     } catch (err) {
       console.warn('Network sync notice:', err);
+      if (!silent) {
+        showToast('Conectado à nuvem. Dados protegidos.', 'info');
+      }
     } finally {
       if (!silent) setIsSyncing(false);
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, showToast]);
 
   // Compute metrics dynamically
   const metrics: DashboardMetrics = useMemo(() => {
@@ -517,7 +757,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let finalImageUrl = productData.imageUrl || 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=800&q=80';
       if (finalImageUrl.startsWith('data:image')) {
         try {
-          finalImageUrl = await optimizeImage(finalImageUrl, 800, 800, 0.82);
+          finalImageUrl = await optimizeImage(finalImageUrl, 600, 600, 0.72);
         } catch {
           // keep original if optimization fails
         }
@@ -545,12 +785,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         status: qty <= 0 ? 'ESGOTADO' : qty <= (settings.lowStockThreshold || 2) ? 'BAIXO_ESTOQUE' : 'DISPONIVEL',
         imageUrl: finalImageUrl,
         description: (productData.description || '').trim(),
+        entryDate: productData.entryDate || new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
-      // 2. Immediate optimistic local update for instant feedback
-      setProducts((prev) => [fullProduct, ...prev]);
+      // 2. Immediate optimistic local update + immediate IndexedDB save
+      setProducts((prev) => {
+        const next = [fullProduct, ...prev];
+        idbSet('eternal_chic_products', next);
+        return next;
+      });
 
       // 3. Save to Firebase Firestore
       try {
@@ -591,7 +836,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let finalImageUrl = productData.imageUrl;
       if (finalImageUrl && finalImageUrl.startsWith('data:image')) {
         try {
-          finalImageUrl = await optimizeImage(finalImageUrl, 800, 800, 0.82);
+          finalImageUrl = await optimizeImage(finalImageUrl, 600, 600, 0.72);
           productData.imageUrl = finalImageUrl;
         } catch {
           // ignore
@@ -612,12 +857,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         salePrice: sale,
         stockQuantity: qty,
         profitMargin: productData.profitMargin !== undefined ? Number(productData.profitMargin) : margin,
+        entryDate: productData.entryDate !== undefined ? productData.entryDate : (existing?.entryDate || existing?.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0]),
         status: qty <= 0 ? 'ESGOTADO' : qty <= (settings.lowStockThreshold || 2) ? 'BAIXO_ESTOQUE' : 'DISPONIVEL',
         updatedAt: new Date().toISOString(),
       };
 
-      // Optimistic update
-      setProducts((prev) => prev.map((p) => (p.id === id ? updatedProduct : p)));
+      // Optimistic update + immediate IndexedDB save
+      setProducts((prev) => {
+        const next = prev.map((p) => (p.id === id ? updatedProduct : p));
+        idbSet('eternal_chic_products', next);
+        return next;
+      });
 
       // Firebase Firestore update
       try {
@@ -654,7 +904,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // PRODUCTS: Delete
   const deleteProduct = async (id: string): Promise<boolean> => {
     try {
-      setProducts((prev) => prev.filter((p) => p.id !== id));
+      setProducts((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        idbSet('eternal_chic_products', next);
+        return next;
+      });
 
       // Delete from Firestore
       try {

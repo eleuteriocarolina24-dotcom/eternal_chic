@@ -16,6 +16,8 @@ import {
 import { useStore } from '../context/StoreContext';
 import { Product } from '../types';
 import { ButterflyLogo } from '../components/ButterflyLogo';
+import { DEFAULT_PIECE_IMAGE } from '../lib/firebase';
+import { formatDateBR } from '../utils/dateUtils';
 
 export const CatalogView: React.FC = () => {
   const { products, settings, showToast } = useStore();
@@ -145,8 +147,11 @@ export const CatalogView: React.FC = () => {
                 {/* 1. Foto Grande da Peça */}
                 <div className="relative aspect-3/4 bg-[#F9F7F5] overflow-hidden cursor-pointer">
                   <img
-                    src={product.imageUrl}
+                    src={product.imageUrl || DEFAULT_PIECE_IMAGE}
                     alt={product.name}
+                    onError={(e) => {
+                      e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                    }}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     onClick={() => setSelectedProductDetail(product)}
                   />
@@ -274,8 +279,11 @@ export const CatalogView: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2">
               <div className="aspect-square bg-white">
                 <img
-                  src={selectedProductDetail.imageUrl}
+                  src={selectedProductDetail.imageUrl || DEFAULT_PIECE_IMAGE}
                   alt={selectedProductDetail.name}
+                  onError={(e) => {
+                    e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                  }}
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -301,6 +309,7 @@ export const CatalogView: React.FC = () => {
                     </p>
                   )}
                   <div className="mt-4 pt-3 border-t border-[#D9C5B2] text-xs text-[#8C7A6B] space-y-1">
+                    <p>📅 Cadastrado em: <strong className="text-[#3D2B1F]">{formatDateBR(selectedProductDetail.entryDate || selectedProductDetail.createdAt)}</strong></p>
                     <p>📏 Tamanho: <strong className="text-[#3D2B1F]">{selectedProductDetail.size || 'Único'}</strong></p>
                     <p>🎨 Cor: <strong className="text-[#3D2B1F]">{selectedProductDetail.color || 'Padrão'}</strong></p>
                     <p>📦 Estoque: <strong className="text-[#3D2B1F]">{selectedProductDetail.stockQuantity} unidades</strong></p>

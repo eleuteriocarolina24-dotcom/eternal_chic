@@ -18,12 +18,14 @@ import {
   Filter,
   Upload,
   Link as LinkIcon,
-  RefreshCw
+  RefreshCw,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product, StockStatus } from '../types';
 import { CameraModal } from '../components/CameraModal';
 import { optimizeImage, DEFAULT_PIECE_IMAGE } from '../lib/firebase';
+import { formatDateBR, getTodayISODate } from '../utils/dateUtils';
 
 export const ProductRegisterView: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, showToast, settings } = useStore();
@@ -35,6 +37,7 @@ export const ProductRegisterView: React.FC = () => {
   const [category, setCategory] = useState('Vestidos');
   const [size, setSize] = useState('M');
   const [color, setColor] = useState('');
+  const [entryDate, setEntryDate] = useState<string>(() => getTodayISODate());
   const [costPrice, setCostPrice] = useState<string>('50.00');
   const [profitMargin, setProfitMargin] = useState<string>('100');
   const [salePrice, setSalePrice] = useState<string>('100.00');
@@ -180,6 +183,7 @@ export const ProductRegisterView: React.FC = () => {
     setCategory(product.category || 'Vestidos');
     setSize(product.size || 'M');
     setColor(product.color || '');
+    setEntryDate(product.entryDate || (product.createdAt ? product.createdAt.split('T')[0] : getTodayISODate()));
     setCostPrice(product.costPrice.toString());
     setProfitMargin(product.profitMargin.toString());
     setSalePrice(product.salePrice.toString());
@@ -196,6 +200,7 @@ export const ProductRegisterView: React.FC = () => {
     setCategory('Vestidos');
     setSize('M');
     setColor('');
+    setEntryDate(getTodayISODate());
     setCostPrice('50.00');
     setProfitMargin('100');
     setSalePrice('100.00');
@@ -226,6 +231,7 @@ export const ProductRegisterView: React.FC = () => {
       stockQuantity: Math.max(0, parseInt(stockQuantity) || 0),
       imageUrl,
       description: description.trim(),
+      entryDate: entryDate || getTodayISODate(),
     };
 
     if (editingId) {
@@ -481,8 +487,8 @@ export const ProductRegisterView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Categoria, Tamanho, Cor, Estoque */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {/* Categoria, Tamanho, Cor, Estoque, Data de Entrada */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <div>
                   <label className="block text-[10px] uppercase tracking-widest font-medium text-[#3D2B1F] mb-1">
                     Categoria
@@ -541,6 +547,21 @@ export const ProductRegisterView: React.FC = () => {
                     value={stockQuantity}
                     onChange={(e) => setStockQuantity(e.target.value)}
                     className="w-full px-3 py-2.5 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs font-bold text-center text-[#3D2B1F] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
+                  />
+                </div>
+
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[10px] uppercase tracking-widest font-medium text-[#3D2B1F] mb-1 flex items-center gap-1">
+                    <CalendarIcon className="w-3 h-3 text-[#8C7A6B]" />
+                    Data da Peça
+                  </label>
+                  <input
+                    id="product-entry-date-input"
+                    type="date"
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                    className="w-full px-2 py-2.5 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs font-medium text-[#3D2B1F] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
+                    title="Data de entrada ou cadastro da peça (sincronizada em todos os aparelhos)"
                   />
                 </div>
               </div>
@@ -782,8 +803,11 @@ export const ProductRegisterView: React.FC = () => {
                 {/* Content */}
                 <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                   <div>
-                    <div className="text-[9px] uppercase tracking-widest font-medium text-[#8C7A6B]">
-                      {p.category} {p.size ? `• Tam: ${p.size}` : ''} {p.color ? `• ${p.color}` : ''}
+                    <div className="flex items-center justify-between gap-1 text-[9px] uppercase tracking-widest font-medium text-[#8C7A6B]">
+                      <span>{p.category} {p.size ? `• Tam: ${p.size}` : ''} {p.color ? `• ${p.color}` : ''}</span>
+                      <span className="font-mono font-normal text-[#3D2B1F] bg-[#F0EBE6] px-1.5 py-0.5 rounded-xs" title="Data da peça sincronizada">
+                        📅 {formatDateBR(p.entryDate || p.createdAt)}
+                      </span>
                     </div>
                     <h3 className="font-serif text-base font-normal text-[#3D2B1F] line-clamp-1 mt-0.5">
                       {p.name}

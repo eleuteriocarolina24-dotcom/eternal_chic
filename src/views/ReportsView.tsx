@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product } from '../types';
+import { DEFAULT_PIECE_IMAGE } from '../lib/firebase';
 
 export const ReportsView: React.FC = () => {
   const { products, sales, metrics, settings, showToast } = useStore();
@@ -301,8 +302,11 @@ export const ReportsView: React.FC = () => {
                   {/* Foto */}
                   <td className="py-2.5 px-3">
                     <img
-                      src={item.product.imageUrl}
+                      src={item.product.imageUrl || DEFAULT_PIECE_IMAGE}
                       alt={item.product.name}
+                      onError={(e) => {
+                        e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                      }}
                       className="w-10 h-10 rounded-sm object-cover border border-[#D9C5B2] bg-[#F9F7F5]"
                     />
                   </td>

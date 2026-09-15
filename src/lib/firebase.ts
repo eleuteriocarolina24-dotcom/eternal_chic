@@ -92,9 +92,9 @@ function readFileAsDataUrl(fileOrBlob: Blob): Promise<string> {
 // Image compression utility to make piece photo saving ultra-fast, robust, and 100% persistent across all devices
 export async function optimizeImage(
   source: File | Blob | string,
-  maxWidth = 800,
-  maxHeight = 800,
-  quality = 0.80
+  maxWidth = 600,
+  maxHeight = 600,
+  quality = 0.72
 ): Promise<string> {
   if (!source) return DEFAULT_PIECE_IMAGE;
 
@@ -103,8 +103,8 @@ export async function optimizeImage(
     return source.trim();
   }
 
-  // 2. If it is already a small base64 image (< 50KB) and valid, return it
-  if (typeof source === 'string' && source.startsWith('data:image/') && source.length < 50000) {
+  // 2. If it is already a small base64 image (< 35KB) and valid, return it
+  if (typeof source === 'string' && source.startsWith('data:image/') && source.length < 35000) {
     return source;
   }
 
@@ -153,13 +153,19 @@ export async function optimizeImage(
           const ctx = canvas.getContext('2d');
           
           if (ctx) {
-            // Fill background with white to avoid black background on transparent PNGs/stickers
+            // Fill background with white to avoid black background on transparent PNGs
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
             
             // Convert to clean JPEG format for compact size & maximum compatibility
-            const compressed = canvas.toDataURL('image/jpeg', quality);
+            let compressed = canvas.toDataURL('image/jpeg', quality);
+            
+            // Second pass if still larger than 75KB to guarantee safety against Firestore document limits
+            if (compressed.length > 75000) {
+              compressed = canvas.toDataURL('image/jpeg', 0.58);
+            }
+
             if (compressed && compressed.length > 50) {
               return resolve(compressed);
             }
@@ -172,7 +178,7 @@ export async function optimizeImage(
       };
 
       img.onerror = () => {
-        // Fallback directly to the raw Base64 data URL (which is permanent)
+        // Fallback directly to the raw Base64 data URL
         resolve(initialDataUrl);
       };
 

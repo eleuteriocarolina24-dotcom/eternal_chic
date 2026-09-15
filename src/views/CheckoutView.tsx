@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product, PaymentMethod } from '../types';
+import { DEFAULT_PIECE_IMAGE } from '../lib/firebase';
 
 // Web Audio API beep generator for barcode scanner sound
 const playBeepSound = (type: 'success' | 'error' = 'success') => {
@@ -497,8 +498,11 @@ export const CheckoutView: React.FC = () => {
             <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-sm border border-emerald-800/30 overflow-hidden shrink-0 bg-white shadow-2xs">
                 <img
-                  src={lastCheckout.productImageUrl}
+                  src={lastCheckout.productImageUrl || DEFAULT_PIECE_IMAGE}
                   alt={lastCheckout.productName}
+                  onError={(e) => {
+                    e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                  }}
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -578,8 +582,11 @@ export const CheckoutView: React.FC = () => {
                   <div key={item.id} className="py-2.5 flex items-center justify-between gap-3 group">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <img
-                        src={item.productImageUrl}
+                        src={item.productImageUrl || DEFAULT_PIECE_IMAGE}
                         alt={item.productName}
+                        onError={(e) => {
+                          e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                        }}
                         className="w-10 h-10 rounded-sm object-cover border border-[#D9C5B2] shrink-0"
                       />
                       <div className="min-w-0">
@@ -654,8 +661,11 @@ export const CheckoutView: React.FC = () => {
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <img
-                          src={p.imageUrl}
+                          src={p.imageUrl || DEFAULT_PIECE_IMAGE}
                           alt={p.name}
+                          onError={(e) => {
+                            e.currentTarget.src = DEFAULT_PIECE_IMAGE;
+                          }}
                           className="w-12 h-12 rounded-sm object-cover border border-[#D9C5B2] shrink-0"
                         />
                         <div className="min-w-0">

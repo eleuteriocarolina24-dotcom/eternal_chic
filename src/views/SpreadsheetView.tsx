@@ -18,12 +18,17 @@ import {
   PlusCircle,
   Eye,
   Layers,
-  ArrowUpDown
+  ArrowUpDown,
+  Calendar as CalendarIcon,
+  Printer,
+  ChevronDown
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product } from '../types';
 import { CameraModal } from '../components/CameraModal';
 import { optimizeImage, DEFAULT_PIECE_IMAGE } from '../lib/firebase';
+import { formatDateBR, getTodayISODate } from '../utils/dateUtils';
+import { downloadExcelWithPhotos, openPrintableSpreadsheet, downloadCSV } from '../lib/exportSpreadsheet';
 
 // Sample presets for quick fashion photos
 const FASHION_PHOTO_PRESETS = [
@@ -40,7 +45,7 @@ const FASHION_PHOTO_PRESETS = [
 ];
 
 export const SpreadsheetView: React.FC = () => {
-  const { products, addProduct, updateProduct, deleteProduct, showToast, triggerConfetti } = useStore();
+  const { products, settings, addProduct, updateProduct, deleteProduct, showToast, triggerConfetti } = useStore();
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,6 +58,7 @@ export const SpreadsheetView: React.FC = () => {
   const [newCostPrice, setNewCostPrice] = useState('50.00');
   const [newSalePrice, setNewSalePrice] = useState('110.00');
   const [newStockQty, setNewStockQty] = useState('1');
+  const [newEntryDate, setNewEntryDate] = useState<string>(() => getTodayISODate());
   const [newImageUrl, setNewImageUrl] = useState('https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=800&q=80');
   const [isInserting, setIsInserting] = useState(false);
 
@@ -60,6 +66,7 @@ export const SpreadsheetView: React.FC = () => {
   const [photoModalTarget, setPhotoModalTarget] = useState<'new_row' | string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [customPhotoUrlInput, setCustomPhotoUrlInput] = useState('');
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -95,6 +102,7 @@ export const SpreadsheetView: React.FC = () => {
         status: qtyNum > 0 ? 'DISPONIVEL' : 'ESGOTADO',
         imageUrl: newImageUrl || 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=800&q=80',
         category: 'Geral',
+        entryDate: newEntryDate || getTodayISODate(),
       });
 
       if (added) {
@@ -106,6 +114,7 @@ export const SpreadsheetView: React.FC = () => {
         setNewCostPrice('50.00');
         setNewSalePrice('110.00');
         setNewStockQty('1');
+        setNewEntryDate(getTodayISODate());
         // Pick next random elegant preset photo for convenience
         const randomPreset = FASHION_PHOTO_PRESETS[Math.floor(Math.random() * FASHION_PHOTO_PRESETS.length)];
         setNewImageUrl(randomPreset.url);
@@ -118,7 +127,7 @@ export const SpreadsheetView: React.FC = () => {
   };
 
   // Inline cell updates directly to store
-  const handleInlineChange = (id: string, field: 'name' | 'code' | 'costPrice' | 'salePrice' | 'stockQuantity' | 'imageUrl', value: string) => {
+  const handleInlineChange = (id: string, field: 'name' | 'code' | 'costPrice' | 'salePrice' | 'stockQuantity' | 'imageUrl' | 'entryDate', value: string) => {
     const product = products.find(p => p.id === id);
     if (!product) return;
 
@@ -142,6 +151,8 @@ export const SpreadsheetView: React.FC = () => {
       });
     } else if (field === 'imageUrl') {
       updateProduct(id, { imageUrl: value });
+    } else if (field === 'entryDate') {
+      updateProduct(id, { entryDate: value });
     }
   };
 
@@ -202,34 +213,37 @@ export const SpreadsheetView: React.FC = () => {
     setIsCameraOpen(false);
   };
 
+  // Excel Export with Photos
+  const handleExportExcel = () => {
+    if (products.length === 0) {
+      showToast('Nenhuma peça na planilha para exportar.', 'warning');
+      return;
+    }
+    downloadExcelWithPhotos(products, settings);
+    showToast('✨ Planilha Excel com fotos baixada! Ao abrir no Excel ou Planilhas, as fotos aparecem na primeira coluna.', 'success');
+    setIsExportMenuOpen(false);
+  };
+
+  // Printable View with Photos
+  const handlePrintableSpreadsheet = () => {
+    if (products.length === 0) {
+      showToast('Nenhuma peça na planilha para imprimir.', 'warning');
+      return;
+    }
+    openPrintableSpreadsheet(products, settings);
+    showToast('Abrindo visualização para impressão/PDF com fotos...', 'info');
+    setIsExportMenuOpen(false);
+  };
+
   // CSV Export
   const handleExportCSV = () => {
     if (products.length === 0) {
       showToast('Nenhuma peça na planilha para exportar.', 'warning');
       return;
     }
-
-    const headers = ['Código', 'Nome da Peça', 'Valor Pago (Custo)', 'Valor Final (Venda)', 'Lucro Unitário', 'Margem (%)', 'Qtd Estoque', 'Foto URL'];
-    const rows = products.map((p) => [
-      `"${p.code}"`,
-      `"${p.name.replace(/"/g, '""')}"`,
-      p.costPrice.toFixed(2),
-      p.salePrice.toFixed(2),
-      (p.salePrice - p.costPrice).toFixed(2),
-      `${p.profitMargin.toFixed(1)}%`,
-      p.stockQuantity,
-      `"${p.imageUrl}"`,
-    ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `planilha_pecas_eternal_chic_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCSV(products);
     showToast('Planilha CSV exportada com sucesso!', 'success');
+    setIsExportMenuOpen(false);
   };
 
   // CSV Import
@@ -355,15 +369,70 @@ export const SpreadsheetView: React.FC = () => {
             <span>Importar CSV</span>
           </button>
 
-          <button
-            id="export-spreadsheet-btn"
-            onClick={handleExportCSV}
-            className="px-3.5 py-2 bg-white hover:bg-[#F0EBE6] text-[#3D2B1F] border border-[#D9C5B2] rounded-sm text-[10px] uppercase tracking-widest font-medium flex items-center gap-1.5 transition-colors shadow-2xs"
-            title="Baixar planilha compatível com Excel / Google Planilhas"
-          >
-            <Download className="w-3.5 h-3.5 text-[#8C7A6B]" />
-            <span>Exportar Planilha</span>
-          </button>
+          {/* Export Dropdown with Photos */}
+          <div className="relative inline-flex">
+            <button
+              id="export-spreadsheet-with-photos-btn"
+              onClick={handleExportExcel}
+              className="px-4 py-2 bg-[#3D2B1F] hover:bg-[#2A1D15] text-[#F9F6F0] rounded-l-sm text-[10px] uppercase tracking-widest font-semibold flex items-center gap-1.5 transition-all shadow-xs"
+              title="Baixar planilha Excel com fotos incluídas diretamente nas células"
+            >
+              <Download className="w-3.5 h-3.5 text-[#D9C5B2]" />
+              <span>Baixar Planilha com Fotos</span>
+            </button>
+            <button
+              id="export-menu-toggle-btn"
+              onClick={() => setIsExportMenuOpen((prev) => !prev)}
+              className="px-2 py-2 bg-[#4D3627] hover:bg-[#3D2B1F] text-[#F9F6F0] border-l border-[#5D4230] rounded-r-sm transition-colors"
+              title="Mais opções de exportação (Excel com fotos, PDF/Impressão, CSV)"
+            >
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isExportMenuOpen && (
+              <div 
+                id="export-dropdown-menu"
+                className="absolute right-0 top-full mt-1.5 w-64 bg-white border border-[#D9C5B2] shadow-lg rounded-sm py-1.5 z-40"
+              >
+                <div className="px-3 py-1 text-[9px] uppercase tracking-widest font-bold text-[#8C7A6B] border-b border-[#F0EBE6] mb-1">
+                  Formatos de Exportação
+                </div>
+                <button
+                  id="export-option-excel-photos"
+                  onClick={handleExportExcel}
+                  className="w-full px-3 py-2 text-left hover:bg-[#F9F6F0] text-xs text-[#3D2B1F] flex items-center gap-2.5 font-medium transition-colors"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-[#3D2B1F] shrink-0" />
+                  <div>
+                    <div className="font-semibold text-[11px] text-[#3D2B1F]">Excel com Fotos (.xls)</div>
+                    <div className="text-[10px] text-[#8C7A6B]">Fotos em miniatura na primeira coluna</div>
+                  </div>
+                </button>
+                <button
+                  id="export-option-print-pdf"
+                  onClick={handlePrintableSpreadsheet}
+                  className="w-full px-3 py-2 text-left hover:bg-[#F9F6F0] text-xs text-[#3D2B1F] flex items-center gap-2.5 font-medium transition-colors"
+                >
+                  <Printer className="w-4 h-4 text-[#8C7A6B] shrink-0" />
+                  <div>
+                    <div className="font-semibold text-[11px] text-[#3D2B1F]">Imprimir / Salvar PDF</div>
+                    <div className="text-[10px] text-[#8C7A6B]">Tabela para impressão com fotos nítidas</div>
+                  </div>
+                </button>
+                <button
+                  id="export-option-csv-raw"
+                  onClick={handleExportCSV}
+                  className="w-full px-3 py-2 text-left hover:bg-[#F9F6F0] text-xs text-[#3D2B1F] flex items-center gap-2.5 font-medium border-t border-[#F0EBE6] mt-1 transition-colors"
+                >
+                  <Download className="w-4 h-4 text-[#8C7A6B] shrink-0" />
+                  <div>
+                    <div className="font-semibold text-[11px] text-[#3D2B1F]">Arquivo CSV (Texto)</div>
+                    <div className="text-[10px] text-[#8C7A6B]">Apenas texto e valores numéricos</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -480,7 +549,7 @@ export const SpreadsheetView: React.FC = () => {
           </div>
 
           {/* Nome da Peça */}
-          <div className="sm:col-span-3">
+          <div className="sm:col-span-2">
             <label className="block text-[10px] uppercase tracking-widest text-[#8C7A6B] font-bold mb-1">
               Nome da Peça *
             </label>
@@ -489,19 +558,35 @@ export const SpreadsheetView: React.FC = () => {
               id="quick-entry-name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="Ex: Vestido Seda Terracota"
+              placeholder="Ex: Vestido Seda"
               required
               className="w-full px-2.5 py-2 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs text-[#3D2B1F] font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
             />
           </div>
 
-          {/* Valor que Paguei (Custo) */}
+          {/* Data de Entrada */}
           <div className="sm:col-span-2">
+            <label className="block text-[10px] uppercase tracking-widest text-[#8C7A6B] font-bold mb-1 flex items-center gap-1">
+              <CalendarIcon className="w-3 h-3" />
+              Data Entrada
+            </label>
+            <input
+              type="date"
+              id="quick-entry-date"
+              value={newEntryDate}
+              onChange={(e) => setNewEntryDate(e.target.value)}
+              className="w-full px-2 py-2 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs text-[#3D2B1F] font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
+              title="Data de entrada sincronizada entre celular, tablet e computador"
+            />
+          </div>
+
+          {/* Valor que Paguei (Custo) */}
+          <div className="sm:col-span-1">
             <label className="block text-[10px] uppercase tracking-widest text-[#8C7A6B] font-bold mb-1">
-              O Valor que Paguei (R$) *
+              Custo *
             </label>
             <div className="relative">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-[#8C7A6B] font-mono">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-[#8C7A6B] font-mono">
                 R$
               </span>
               <input
@@ -513,18 +598,18 @@ export const SpreadsheetView: React.FC = () => {
                 onChange={(e) => setNewCostPrice(e.target.value)}
                 placeholder="50.00"
                 required
-                className="w-full pl-7 pr-2 py-2 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs font-serif font-bold text-[#3D2B1F] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
+                className="w-full pl-6 pr-1.5 py-2 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs font-serif font-bold text-[#3D2B1F] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
               />
             </div>
           </div>
 
           {/* Valor Final (Venda) */}
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-1">
             <label className="block text-[10px] uppercase tracking-widest text-[#8C7A6B] font-bold mb-1">
-              Valor Final (R$) *
+              Venda *
             </label>
             <div className="relative">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-[#8C7A6B] font-mono">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-[#8C7A6B] font-mono">
                 R$
               </span>
               <input
@@ -536,7 +621,7 @@ export const SpreadsheetView: React.FC = () => {
                 onChange={(e) => setNewSalePrice(e.target.value)}
                 placeholder="110.00"
                 required
-                className="w-full pl-7 pr-2 py-2 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs font-serif font-bold text-emerald-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
+                className="w-full pl-6 pr-1.5 py-2 bg-[#F9F7F5] border border-[#D9C5B2] rounded-sm text-xs font-serif font-bold text-emerald-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D2B1F]"
               />
             </div>
           </div>
@@ -626,6 +711,12 @@ export const SpreadsheetView: React.FC = () => {
                     <ArrowUpDown className="w-3 h-3 text-[#8C7A6B]" />
                   </div>
                 </th>
+                <th className="py-3 px-3 min-w-[130px]">
+                  <div className="flex items-center gap-1">
+                    <CalendarIcon className="w-3 h-3 text-[#8C7A6B]" />
+                    <span>Data de Entrada</span>
+                  </div>
+                </th>
                 <th className="py-3 px-3 min-w-[130px] cursor-pointer select-none" onClick={() => toggleSort('costPrice')}>
                   <div className="flex items-center gap-1">
                     <span>O Valor que Paguei</span>
@@ -651,7 +742,7 @@ export const SpreadsheetView: React.FC = () => {
             <tbody className="divide-y divide-[#D9C5B2]/60 text-xs">
               {sortedProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-[#8C7A6B]">
+                  <td colSpan={10} className="py-12 text-center text-[#8C7A6B]">
                     <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#3D2B1F]" />
                     <p className="font-serif text-base text-[#3D2B1F] mb-1">Nenhuma peça encontrada na planilha</p>
                     <p className="text-xs font-light">Use o formulário de inserção rápida acima para adicionar suas peças.</p>
@@ -713,6 +804,17 @@ export const SpreadsheetView: React.FC = () => {
                           onBlur={(e) => handleInlineChange(product.id, 'name', e.target.value)}
                           className="w-full px-2 py-1 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-[#D9C5B2] focus:border-[#3D2B1F] rounded-sm text-xs text-[#3D2B1F] font-medium focus:outline-none transition-colors"
                           title="Clique para editar o nome da peça"
+                        />
+                      </td>
+
+                      {/* Data de Entrada */}
+                      <td className="py-2 px-3">
+                        <input
+                          type="date"
+                          defaultValue={product.entryDate || (product.createdAt ? product.createdAt.split('T')[0] : getTodayISODate())}
+                          onBlur={(e) => handleInlineChange(product.id, 'entryDate', e.target.value)}
+                          className="w-full px-2 py-1 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-[#D9C5B2] focus:border-[#3D2B1F] rounded-sm text-xs font-medium text-[#3D2B1F] focus:outline-none transition-colors"
+                          title="Clique para alterar a data de entrada da peça (sincronizada)"
                         />
                       </td>
 

@@ -27,6 +27,7 @@ export interface Product {
   status: StockStatus;
   imageUrl: string;
   description?: string;
+  entryDate?: string; // Data de Entrada / Cadastro da Peça (YYYY-MM-DD)
   createdAt: string;
   updatedAt: string;
 }

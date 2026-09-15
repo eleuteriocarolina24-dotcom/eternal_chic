@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Product, PaymentMethod } from '../types';
 import { useStore } from '../context/StoreContext';
+import { DEFAULT_PIECE_IMAGE } from '../lib/firebase';
 
 interface SellModalProps {
   product: Product | null;
@@ -108,8 +109,9 @@ export const SellModal: React.FC<SellModalProps> = ({
         {/* Product Preview Banner */}
         <div className="p-4 bg-white border-b border-[#D9C5B2] flex items-center gap-3.5">
           <img
-            src={product.imageUrl}
+            src={product.imageUrl || DEFAULT_PIECE_IMAGE}
             alt={product.name}
+            onError={(e) => { e.currentTarget.src = DEFAULT_PIECE_IMAGE; }}
             className="w-14 h-14 rounded-sm object-cover border border-[#D9C5B2] shadow-2xs shrink-0 bg-white"
           />
           <div className="flex-1 min-w-0">

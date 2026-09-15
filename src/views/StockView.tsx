@@ -12,11 +12,14 @@ import {
   Sparkles,
   Filter,
   DollarSign,
-  Barcode
+  Barcode,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product } from '../types';
 import { SellModal } from '../components/SellModal';
+import { formatDateBR } from '../utils/dateUtils';
+import { DEFAULT_PIECE_IMAGE } from '../lib/firebase';
 
 export const StockView: React.FC = () => {
   const { products, updateProduct, showToast, settings } = useStore();
@@ -178,8 +181,9 @@ export const StockView: React.FC = () => {
                   <div className="flex items-center gap-4 min-w-0">
                     <div className="relative aspect-square w-16 h-16 md:w-20 md:h-20 rounded-sm overflow-hidden shrink-0 border border-[#D9C5B2] bg-[#F9F7F5]">
                       <img
-                        src={product.imageUrl}
+                        src={product.imageUrl || DEFAULT_PIECE_IMAGE}
                         alt={product.name}
+                        onError={(e) => { e.currentTarget.src = DEFAULT_PIECE_IMAGE; }}
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-[#3D2B1F]/90 text-white text-[8px] font-mono rounded-xs">
@@ -202,6 +206,9 @@ export const StockView: React.FC = () => {
                             • {product.color}
                           </span>
                         )}
+                        <span className="font-mono text-[9px] text-[#3D2B1F] bg-[#FAF8F5] border border-[#D9C5B2] px-1.5 py-0.5 rounded-xs" title="Data da peça sincronizada">
+                          📅 {formatDateBR(product.entryDate || product.createdAt)}
+                        </span>
                       </div>
 
                       <h3 className="font-serif text-base font-normal text-[#3D2B1F] truncate">
